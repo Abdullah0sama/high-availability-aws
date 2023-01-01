@@ -1,0 +1,293 @@
+
+
+Parameters:
+  ProjectName:
+    Description: Project Name
+    Type: String
+    Default: weby
+
+  VPCCIDR:
+    Description: CIDR for VPC
+    Type: String
+    Default: 10.0.0.0/16
+  
+  PublicSub1CIDR:
+    Description: CIDR for public subnet 1
+    Type: String
+    Default: 10.0.1.0/24
+
+  PublicSub2CIDR:
+    Description: CIDR for public subnet 2
+    Type: String
+    Default: 10.0.2.0/24
+
+
+  PrivateSub1CIDR:
+    Description: CIDR for private subnet 1
+    Type: String
+    Default: 10.0.3.0/24
+
+
+  PrivateSub2CIDR:
+    Description: CIDR for private subnet 2
+    Type: String
+    Default: 10.0.4.0/24
+
+  
+
+Resources:
+  MainVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VPCCIDR
+      Tags:
+        - Key: project
+          Value: weby
+
+  PublicSub1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select [0, !GetAZs ''] 
+      VpcId: !Ref MainVPC
+      CidrBlock: !Ref PublicSub1CIDR
+      Tags:
+        - Key: Name
+          Value: Public1
+
+  PublicSub2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select [1, !GetAZs ''] 
+      VpcId: !Ref MainVPC
+      CidrBlock: !Ref PublicSub2CIDR
+      Tags:
+        - Key: Name
+          Value: Public2
+  
+  PrivateSub1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select [0, !GetAZs ''] 
+      VpcId: !Ref MainVPC
+      CidrBlock: !Ref PrivateSub1CIDR
+      Tags:
+        - Key: Name
+          Value: Private1
+  
+  PrivateSub2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select [1, !GetAZs ''] 
+      VpcId: !Ref  MainVPC
+      CidrBlock: !Ref PrivateSub2CIDR
+      Tags:
+        - Key: Name
+          Value: Private2
+
+  NatGateWayEIP1:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  NatPublic1:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      SubnetId: !Ref PublicSub1
+      AllocationId: !GetAtt NatGateWayEIP1.AllocationId
+
+  NatGateWayEIP2:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  NatPublic2:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      SubnetId: !Ref PublicSub2
+      AllocationId: !GetAtt NatGateWayEIP2.AllocationId
+      
+  igw:
+    Type: AWS::EC2::InternetGateway
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref MainVPC
+      InternetGatewayId: !Ref igw
+
+  PublicRouteTable1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref MainVPC
+    
+  PrivateRouteTable1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref MainVPC
+
+  PublicRouteTableAssoc1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSub1
+      RouteTableId: !Ref PublicRouteTable1
+
+  PrivateRouteTableAssoc1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSub1
+      RouteTableId: !Ref PrivateRouteTable1
+
+  PublicSub1Routeigw:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PublicRouteTable1
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref igw
+  
+  PrivateSub1RouteNat:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatPublic1
+    
+
+  PublicRouteTable2:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref MainVPC
+    
+  PrivateRouteTable2:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref MainVPC
+
+  PublicRouteTableAssoc2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSub2
+      RouteTableId: !Ref PublicRouteTable2
+
+  PrivateRouteTableAssoc2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSub2
+      RouteTableId: !Ref PrivateRouteTable2
+
+  PublicSub2Routeigw:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PublicRouteTable2
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref igw
+  
+  PrivateSub2RouteNat:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable2
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatPublic2
+
+
+  WebAppSec:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: WebServerSecurity
+      GroupDescription: Allow HTTP, HTTPS, SSH
+      VpcId: !Ref MainVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+  
+  LBSec:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: LoadBalanceSecurity
+      GroupDescription: Allowing HTTP, HTTPS for loadbalancer
+      VpcId: !Ref MainVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+
+
+Outputs:
+  VPCID:
+    Description: VPC ID
+    Value: !Ref MainVPC
+    Export: 
+      Name: !Join [ ":", [ !Ref "ProjectName", VPC]]
+  
+  PublicSubnet1:
+    Description: Public Subnet 1
+    Value: !Ref PublicSub1
+    Export: 
+      Name: !Join [ ":", [ !Ref "ProjectName", PublicSub1]]
+
+  PrivateSubnet1:
+    Description: Private Subnet 1
+    Value: !Ref PrivateSub1
+    Export: 
+      Name: !Join [ ":", [ !Ref "ProjectName", PrivateSub1]]
+  
+
+  PublicSubnet2:
+    Description: Public Subnet 2
+    Value: !Ref PublicSub2
+    Export: 
+      Name: !Join [ ":", [ !Ref "ProjectName", PublicSub2]]
+
+  PrivateSubnet2:
+    Description: Private Subnet 2
+    Value: !Ref PrivateSub2
+    Export: 
+      Name: !Join [ ":", [ !Ref "ProjectName", PrivateSub2]]
+
+  WebAppSec:
+    Description: Web app security group id
+    Value: !Ref WebAppSec
+    Export: 
+      Name: !Join [ ":", [ !Ref "ProjectName", WebAppSec]]
+  
+  LBSec:
+    Description: Load Balancer security group id
+    Value: !Ref LBSec
+    Export: 
+      Name: !Join [ ":", [ !Ref "ProjectName", LBSec]]

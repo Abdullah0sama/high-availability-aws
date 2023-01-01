@@ -1,0 +1,113 @@
+
+Parameters:
+  ProjectName:
+    Description: Project Name
+    Type: String
+    Default: weby
+Resources:
+  EC2LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub ${ProjectName}-launchTemp
+      VersionDescription: 1
+      LaunchTemplateData: 
+        ImageId: ami-0574da719dca65348
+        InstanceType: t2.micro
+        KeyName: udakey
+        SecurityGroupIds: 
+          - Fn::ImportValue: 
+              !Sub ${ProjectName}:WebAppSec
+        UserData: 
+          Fn::Base64: |
+            #!/bin/bash
+            sudo apt-get update -y
+            sudo apt-get install apache2 -y
+            sudo systemctl enable apache2
+            sudo systemctl start apache2.service
+            cd /var/www/html
+            echo "Hello from the other side!" > index.html
+
+
+  WebAppASG:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      LaunchTemplate: 
+        LaunchTemplateId: !Ref EC2LaunchTemplate
+        Version: !GetAtt EC2LaunchTemplate.LatestVersionNumber
+      MaxSize: 4
+      MinSize: 2
+      DesiredCapacity: 2
+      VPCZoneIdentifier:
+        - Fn::ImportValue: 
+            !Sub "${ProjectName}:PrivateSub1" 
+        - Fn::ImportValue: 
+            !Sub "${ProjectName}:PrivateSub2"
+      TargetGroupARNs:
+        - !Ref WebAppTargetGroup
+      Tags:
+        - Key: project
+          Value: !Ref ProjectName
+          PropagateAtLaunch: True
+
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Scheme: internet-facing
+      SecurityGroups:
+        - Fn::ImportValue:
+            !Sub "${ProjectName}:LBSec"
+      Type: application
+      Subnets:
+        - Fn::ImportValue: 
+            !Sub "${ProjectName}:PublicSub1"
+        - Fn::ImportValue: 
+            !Sub "${ProjectName}:PublicSub2"
+
+  ELBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties: 
+      DefaultActions: 
+        - Type: forward
+          TargetGroupArn: !Ref WebAppTargetGroup
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 80
+      Protocol: HTTP
+
+  WebAppTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties: 
+      HealthCheckEnabled: True
+      HealthCheckIntervalSeconds: 30
+      HealthCheckPath: /
+      HealthCheckPort: 80
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 3
+      IpAddressType: ipv4
+      Name: webTargetGroup
+      Port: 80
+      Protocol: HTTP
+      TargetType: instance
+      UnhealthyThresholdCount: 2
+      VpcId: 
+        Fn::ImportValue:
+          !Sub "${ProjectName}:VPC"
+
+  WebAppScailingPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties: 
+      AutoScalingGroupName: !Ref WebAppASG
+        EstimatedInstanceWarmup: 30
+      PolicyType: TargetTrackingScaling
+      TargetTrackingConfiguration: 
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ASGAverageCPUUtilization
+        TargetValue: 50
+
+
+Outputs:
+  LBURL:
+    Description: Loadbalancer DNS name
+    Value: !GetAtt LoadBalancer.DNSName
+    Export: 
+      Name: !Sub "${ProjectName}:LB"
